@@ -52,7 +52,7 @@ window.loginAdmin = async () => {
   try {
     await signInWithEmailAndPassword(auth,email,password);
     // إذا كانت البيانات صحيحة يتم النقل مباشرة
-    window.location.href = "sup.html";
+    window.location.href = "../sup.html";
   } catch(error){
     switch(error.code){
       case "auth/user-not-found":
