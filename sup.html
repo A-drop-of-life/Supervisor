@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>صفحة المشرف - قطرة حياة</title>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#f9f9f9;direction:rtl;color:#333;}
+header{background:#b71c1c;color:#fff;text-align:center;padding:15px;font-size:22px;}
+.container{max-width:1200px;margin:20px auto;padding:20px;}
+.search-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+.search-row div{flex:1;min-width:150px;}
+button{cursor:pointer;padding:8px 12px;border:none;border-radius:6px;background:#b71c1c;color:white;font-weight:bold;transition:0.3s;}
+button:hover{background:#a00000;}
+select{padding:8px;border-radius:6px;border:1px solid #ccc;cursor:pointer;font-weight:bold;}
+table{width:100%;border-collapse:collapse;margin-top:10px;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;font-size:14px;}
+th{background:#b71c1c;color:#fff;}
+.card-container{display:none;}
+.card{background:#fff;border:1px solid #ccc;border-radius:8px;padding:15px;margin-bottom:15px;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
+.card p{margin:5px 0;font-size:14px;}
+.card button{width:48%;margin:2px 1%;font-size:14px;}
+@media(max-width:768px){
+  table{display:none;}
+  .card-container{display:block;}
+}
+.modal{
+  display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);
+  justify-content:center;align-items:center;z-index:10000;
+}
+.modal-content{
+  background:#fff;padding:20px;border-radius:8px;width:90%;max-width:500px;max-height:90%;overflow-y:auto;
+}
+.modal-content h3{text-align:center;color:#b71c1c;margin-bottom:15px;}
+.modal-content label{display:block;margin:10px 0 5px;}
+.modal-content input, .modal-content select, .modal-content textarea{width:100%;padding:8px;margin-bottom:10px;border:1px solid #ccc;border-radius:4px;}
+.modal-content button{width:48%;margin:2px 1%;}
+</style>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import { getFirestore, collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBWIy4ny6Ki39OerkkH9gT-jr63Vn8s9Uk",
+  authDomain: "drop-of-life-df6bf.firebaseapp.com",
+  projectId: "drop-of-life-df6bf",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+window.addEventListener("DOMContentLoaded", async ()=>{
+  const locationSelect = document.getElementById("currentLocation");
+  const bloodTypeSelect = document.getElementById("bloodType");
+  const resultsBody = document.getElementById("resultsBody");
+  const cardContainer = document.getElementById("cardContainer");
+  const modal = document.getElementById("editModal");
+  const modalForm = document.getElementById("modalForm");
+  const showDeletedBtn = document.getElementById("showDeletedBtn");
+  let currentEditId = null;
+  let showingDeleted = false;
+
+  // جلب أماكن الإقامة
+  const locSnap = await getDocs(collection(db,"locations"));
+  locSnap.forEach(doc=>{
+    const name = doc.data().name;
+    locationSelect.innerHTML += `<option value="${name}">${name}</option>`;
+  });
+
+  async function loadDonors(){
+    resultsBody.innerHTML = "";
+    cardContainer.innerHTML = "";
+
+    const blood = bloodTypeSelect.value;
+    const loc = locationSelect.value;
+
+    const snap = await getDocs(collection(db,"donors"));
+    let filtered = snap.docs.filter(d=>{
+      const x = d.data();
+      if(showingDeleted) return x.isDeleted;
+      return (!blood || x.bloodType===blood) && (!loc || x.currentLocation===loc) && (!x.isDeleted);
+    });
+
+    if(filtered.length===0){
+      resultsBody.innerHTML=`<tr><td colspan="14">${showingDeleted ? "لا توجد بيانات محذوفة" : "اختر فصيلة دم أو مكان للإظهار"}</td></tr>`;
+      cardContainer.innerHTML=`<p>${showingDeleted ? "لا توجد بيانات محذوفة" : "اختر فصيلة دم أو مكان للإظهار"}</p>`;
+      return;
+    }
+
+    filtered.forEach(d=>{
+      const x = d.data();
+      const id = d.id;
+
+      resultsBody.innerHTML += `
+      <tr>
+        <td>${x.name}</td><td>${x.dob}</td><td>${x.gender}</td><td>${x.phone}</td>
+        <td>${x.whatsapp}</td><td>${x.bloodType}</td><td>${x.chronicDiseases}</td>
+        <td>${x.currentMedications}</td><td>${x.city}</td><td>${x.district}</td>
+        <td>${x.isolation}</td><td>${x.village}</td><td>${x.currentLocation}</td>
+        <td>
+          ${showingDeleted
+            ? `<button onclick="restoreDonor('${id}')">استعادة</button>`
+            : `<button onclick="window.open('https://wa.me/${x.whatsapp}','_blank')">واتساب</button>
+               <button onclick="editDonor('${id}')">تعديل</button>
+               <button onclick="deleteDonor('${id}')">حذف</button>`
+          }
+        </td>
+      </tr>`;
+
+      cardContainer.innerHTML += `
+      <div class="card">
+        <p><b>الاسم:</b> ${x.name}</p>
+        <p><b>تاريخ الميلاد:</b> ${x.dob}</p>
+        <p><b>الجنس:</b> ${x.gender}</p>
+        <p><b>الهاتف:</b> ${x.phone}</p>
+        <p><b>الواتساب:</b> ${x.whatsapp}</p>
+        <p><b>فصيلة الدم:</b> ${x.bloodType}</p>
+        <p><b>أمراض مزمنة:</b> ${x.chronicDiseases}</p>
+        <p><b>أدوية حالية:</b> ${x.currentMedications}</p>
+        <p><b>المحافظة:</b> ${x.city}</p>
+        <p><b>المديرية:</b> ${x.district}</p>
+        <p><b>العزلة:</b> ${x.isolation}</p>
+        <p><b>القرية:</b> ${x.village}</p>
+        <p><b>الإقامة الحالية:</b> ${x.currentLocation}</p>
+        <div>
+          ${showingDeleted
+            ? `<button onclick="restoreDonor('${id}')">استعادة</button>`
+            : `<button onclick="window.open('https://wa.me/${x.whatsapp}','_blank')">واتساب</button>
+               <button onclick="editDonor('${id}')">تعديل</button>
+               <button onclick="deleteDonor('${id}')">حذف</button>`
+          }
+        </div>
+      </div>`;
+    });
+  }
+
+  bloodTypeSelect.addEventListener("change", loadDonors);
+  locationSelect.addEventListener("change", loadDonors);
+
+  window.deleteDonor = async function(id){
+    if(confirm("هل أنت متأكد من حذف هذا المتبرع؟")){
+      const donorRef = doc(db, "donors", id);
+      await updateDoc(donorRef, { isDeleted: true });
+      alert("تم حذف المتبرع مؤقتًا");
+      loadDonors();
+    }
+  }
+
+  window.restoreDonor = async function(id){
+    if(confirm("هل تريد استعادة هذا المتبرع؟")){
+      const donorRef = doc(db,"donors",id);
+      await updateDoc(donorRef,{ isDeleted:false });
+      alert("تمت الاستعادة بنجاح");
+      loadDonors();
+    }
+  }
+
+  window.editDonor = async function(id){
+    currentEditId = id;
+    const snap = await getDocs(collection(db,"donors"));
+    const x = snap.docs.find(d=>d.id===id).data();
+    modalForm.name.value = x.name;
+    modalForm.dob.value = x.dob;
+    modalForm.gender.value = x.gender==="ذكر"?"male":"female";
+    modalForm.phone.value = x.phone;
+    modalForm.whatsapp.value = x.whatsapp;
+    modalForm.bloodType.value = x.bloodType;
+    modalForm.chronicDiseases.value = x.chronicDiseases;
+    modalForm.currentMedications.value = x.currentMedications;
+    modalForm.city.value = x.city;
+    modalForm.district.value = x.district;
+    modalForm.isolation.value = x.isolation;
+    modalForm.village.value = x.village;
+    modalForm.currentLocation.value = x.currentLocation;
+    modal.style.display = "flex";
+  }
+
+  modalForm.addEventListener("submit", async e=>{
+    e.preventDefault();
+    if(!currentEditId) return;
+    await updateDoc(doc(db,"donors",currentEditId),{
+      name: modalForm.name.value,
+      dob: modalForm.dob.value,
+      gender: modalForm.gender.value==="male"?"ذكر":"أنثى",
+      phone: modalForm.phone.value,
+      whatsapp: modalForm.whatsapp.value,
+      bloodType: modalForm.bloodType.value,
+      chronicDiseases: modalForm.chronicDiseases.value,
+      currentMedications: modalForm.currentMedications.value,
+      city: modalForm.city.value,
+      district: modalForm.district.value,
+      isolation: modalForm.isolation.value,
+      village: modalForm.village.value,
+      currentLocation: modalForm.currentLocation.value
+    });
+    modal.style.display = "none";
+    loadDonors();
+  });
+
+  document.getElementById("modalClose").addEventListener("click", ()=>{
+    modal.style.display = "none";
+  });
+
+  showDeletedBtn.addEventListener("click", ()=>{
+    showingDeleted = !showingDeleted;
+    showDeletedBtn.textContent = showingDeleted ? "العودة للعرض العادي" : "إظهار المحذوفين مؤقتاً";
+    loadDonors();
+  });
+});
+</script>
+</head>
+
+<body>
+<header>صفحة المشرف</header>
+<div class="container">
+
+<div class="search-row">
+  <div>
+    <select id="bloodType">
+      <option value="">فصيلة الدم</option>
+      <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+      <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+    </select>
+  </div>
+  <div>
+    <select id="currentLocation">
+      <option value="">مكان الإقامة</option>
+    </select>
+  </div>
+  <div>
+    <button id="showDeletedBtn">إظهار المحذوفين مؤقتاً</button>
+  </div>
+</div>
+
+<!-- جدول الكمبيوتر -->
+<table>
+<thead>
+<tr>
+<th>الاسم</th><th>تاريخ الميلاد</th><th>الجنس</th><th>الهاتف</th><th>الواتساب</th>
+<th>فصيلة الدم</th><th>أمراض مزمنة</th><th>أدوية حالية</th>
+<th>المحافظة</th><th>المديرية</th><th>العزلة</th><th>القرية</th><th>الإقامة الحالية</th>
+<th>خيارات</th>
+</tr>
+</thead>
+<tbody id="resultsBody">
+<tr><td colspan="14">اختر فصيلة دم أو مكان الإقامة للعرض</td></tr>
+</tbody>
+</table>
+
+<!-- بطاقات الجوال -->
+<div id="cardContainer" class="card-container"></div>
+</div>
+
+<!-- نافذة تعديل -->
+<div class="modal" id="editModal">
+<div class="modal-content">
+<h3>تعديل بيانات المتبرع</h3>
+<form id="modalForm">
+<label>الاسم الكامل:<input type="text" name="name" required></label>
+<label>تاريخ الميلاد:<input type="date" name="dob" required></label>
+<label>الجنس:
+<select name="gender">
+<option value="male">ذكر</option>
+<option value="female">أنثى</option>
+</select></label>
+<label>رقم الهاتف:<input type="tel" name="phone" required></label>
+<label>الواتساب:<input type="tel" name="whatsapp" required></label>
+<label>فصيلة الدم:
+<select name="bloodType">
+<option value="A+">A+</option><option value="A-">A-</option><option value="B+">B+</option><option value="B-">B-</option>
+<option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+</select></label>
+<label>الأمراض المزمنة:<textarea name="chronicDiseases"></textarea></label>
+<label>الأدوية الحالية:<textarea name="currentMedications"></textarea></label>
+<label>المحافظة:<input type="text" name="city"></label>
+<label>المديرية:<input type="text" name="district"></label>
+<label>العزلة:<input type="text" name="isolation"></label>
+<label>القرية:<input type="text" name="village"></label>
+<label>الإقامة الحالية:<input type="text" name="currentLocation"></label>
+<button type="submit">حفظ</button>
+<button type="button" id="modalClose">إغلاق</button>
+</form>
+</div>
+</div>
+
+</body>
+</html>
